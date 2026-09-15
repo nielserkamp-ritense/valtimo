@@ -69,7 +69,7 @@
         <resetJUL>true</resetJUL>
     </contextListener>
 
-    <root level="#logback.loglevel#">
+    <root level="${logback.loglevel:-INFO}">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="VALTIMODBASYNC"/>
     </root>

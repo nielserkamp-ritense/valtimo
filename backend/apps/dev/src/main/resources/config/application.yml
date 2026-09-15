@@ -183,7 +183,7 @@ opensearch:
 valtimo:
     authorization:
         authzen:
-            enabled: true
+            enabled: ${VALTIMO_AUTHZEN_ENABLED:false}
             url: ${VALTIMO_AUTHZEN_URL:http://localhost:8443}
             timeout: 2s
     opensearch:
