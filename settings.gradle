@@ -38,6 +38,7 @@ include(
     ":backend:aws",
     ":backend:aws:s3-resource",
     ":backend:authorization",
+    ":backend:authorization-authzen",
     ":backend:building-block",
     ":backend:case",
     ":backend:case-opensearch",

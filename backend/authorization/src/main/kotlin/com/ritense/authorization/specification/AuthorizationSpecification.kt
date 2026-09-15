@@ -45,7 +45,7 @@ abstract class AuthorizationSpecification<T : Any>(
 
     protected val permissions by lazy { permissionSupplier() }
 
-    internal open fun isAuthorized(): Boolean {
+    open fun isAuthorized(): Boolean {
         return when (authRequest) {
             is EntityAuthorizationRequest<T> -> isAuthorizedForEntity(authRequest)
             is RelatedEntityAuthorizationRequest<T> -> isAuthorizedForRelatedEntity(authRequest)

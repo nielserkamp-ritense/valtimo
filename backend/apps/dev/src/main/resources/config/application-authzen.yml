@@ -1,0 +1,56 @@
+# Answers authorization from the AuthZEN PDP instead of Valtimo's own PBAC.
+#
+# Activate with the `authzen` Spring profile:
+#
+#     docker compose up -d pdp                       # from the *repository* root
+#     SPRING_PROFILES_ACTIVE=authzen ./gradlew :backend:apps:dev:bootRun
+#
+# ---------------------------------------------------------------------------------------------
+# THIS IS A SPIKE CONFIGURATION. DO NOT POINT IT AT AN ENVIRONMENT WITH USERS.
+#
+# Enabling it replaces the AuthorizationService outright. Point checks are answered by the PDP,
+# but query filtering (getAuthorizationSpecification), getAuthorizedRoles, getPermissions and
+# getMapper/hasMapper are unimplemented and throw. Every list page, task list, dashboard widget
+# and statistic that filters by authorization will fail — around 48 call sites. That is the
+# intended outcome: each gap fails loudly at a named call site instead of being hidden behind a
+# PBAC fallback, and the resulting error log is the inventory of what a PDP would have to answer
+# before this could become real.
+# ---------------------------------------------------------------------------------------------
+#
+# Resource types absent from `resource-types` below are DENIED, and each denial is logged at ERROR
+# naming the type. Running the application and collecting those lines is how the remaining policy
+# work gets enumerated.
+#
+# Only the three types with hand-written policy (pdp/policies-rego/) are configured. All three are types whose
+# `toPredicate` throws `NotImplementedError`, so PBAC never contributed anything beyond the point
+# check and the PDP genuinely replaces it rather than standing in front of it.
+#
+# `ZgwDocument` is the obvious fourth candidate and is deliberately absent: its ROLE_USER rule in
+# `zgw-document.permission.json` uses a `container` condition (ZgwDocument -> JsonSchemaDocument),
+# and flattening the resource graph into properties is an unanswered design question.
+
+valtimo:
+    authorization:
+        authzen:
+            enabled: true
+            # Authoritative for scheme, host and port. Only endpoint *paths* come from
+            # /.well-known/authzen-configuration, because the PDP advertises absolute URLs built
+            # from its own view of its address.
+            url: ${VALTIMO_AUTHZEN_URL:http://localhost:8443}
+            timeout: 2s
+            resource-types:
+                # Bracket notation is required. An unbracketed fully qualified class name is split
+                # on its dots by Spring's relaxed binding and silently binds an empty map, so the
+                # PDP is simply never told about the type.
+                "[com.ritense.objectenapi.security.Object]":
+                    name: object
+                "[com.ritense.zakenapi.security.Zaak]":
+                    name: zaak
+                # `managed_user`, not `user`: `user` is the subject entity type the policies match
+                # on, and this is the user being looked *at*.
+                "[com.ritense.valtimo.contract.authentication.User]":
+                    name: managed_user
+
+logging:
+    level:
+        com.ritense.authorization.authzen: DEBUG

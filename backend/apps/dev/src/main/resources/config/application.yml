@@ -181,6 +181,11 @@ opensearch:
     password: 2cr8zkOoEXQJ3xUk!Aa1
 
 valtimo:
+    authorization:
+        authzen:
+            enabled: true
+            url: ${VALTIMO_AUTHZEN_URL:http://localhost:8443}
+            timeout: 2s
     opensearch:
         enabled: true
     app:
