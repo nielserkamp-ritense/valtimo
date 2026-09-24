@@ -237,7 +237,7 @@ abstract class AuthorizationSpecification<T : Any>(
         }
     }
 
-    protected abstract fun identifierToEntity(identifier: String): T
+    abstract fun identifierToEntity(identifier: String): T
 
     /**
      * Creates a WHERE clause for a query of the referenced entity in form of a Predicate for the given Root and

@@ -84,6 +84,9 @@ class ValtimoAuthorizationService(
         request: AuthorizationRequest<T>,
         permissions: List<Permission>?
     ): AuthorizationSpecification<T> {
+
+
+
         val usedPermissions = lazySupplier { permissions ?: getPermissions(request) }
 
         return getAuthorizationSpecification(request, usedPermissions, enablePermissionLogging = true)

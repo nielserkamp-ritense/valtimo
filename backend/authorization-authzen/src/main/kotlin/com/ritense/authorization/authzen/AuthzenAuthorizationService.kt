@@ -222,7 +222,8 @@ class AuthzenAuthorizationService(
             it.canCreate(request, permissionSupplier)
         } as AuthorizationSpecificationFactory<T>?)
             ?: throw AccessDeniedException("Missing AuthorizationSpecificationFactory<${request.resourceType.name}>")
-        return factory.create(request, permissionSupplier)
+
+        return AuthzenAuthorizationSpecification(factory.create(request, permissionSupplier), request, permissionSupplier)
     }
 
     private fun logPermissions(request: AuthorizationRequest<*>, permissionSupplier: Supplier<List<Permission>>) {
