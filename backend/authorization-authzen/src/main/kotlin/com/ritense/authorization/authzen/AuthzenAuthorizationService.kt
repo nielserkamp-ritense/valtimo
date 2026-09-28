@@ -27,6 +27,7 @@ import com.ritense.authorization.ValtimoAuthorizationService
 import com.ritense.authorization.authzen.client.AuthzenPdpClient
 import com.ritense.authorization.authzen.client.dto.AuthzenAction
 import com.ritense.authorization.authzen.client.dto.AuthzenEvaluationRequest
+import com.ritense.authorization.authzen.client.dto.AuthzenEvaluationResponseTyped
 import com.ritense.authorization.authzen.client.dto.AuthzenResource
 import com.ritense.authorization.authzen.client.dto.AuthzenSearchSubject
 import com.ritense.authorization.authzen.client.dto.AuthzenSubjectSearchRequest
@@ -48,6 +49,7 @@ import org.springframework.stereotype.Service
 import java.lang.reflect.ParameterizedType
 import java.util.UUID
 import java.util.function.Supplier
+import kotlin.collections.filter
 import kotlin.collections.joinToString
 
 @Service
@@ -115,9 +117,12 @@ class AuthzenAuthorizationService(
         request: AuthorizationRequest<T>,
         permissions: List<Permission>?,
     ): AuthorizationSpecification<T>  {
-        val usedPermissions = { permissions ?: run { getPermissions(request) } }
+        val evaluations = client.evaluateAllWithResponseType(requestMapper.map(request), AuthzenPermissionContext::class.java)
 
-        return getAuthorizationSpecification(request, usedPermissions, enablePermissionLogging = true)
+        val usedPermissions= { permissions ?: run { getPermission(request, evaluations) } }
+
+        return AuthzenAuthorizationSpecification(evaluations.any { it.decision }, getAuthorizationSpecification(request,
+            usedPermissions, enablePermissionLogging = true), request, usedPermissions)
     }
 
     override fun <T : Any> getAuthorizedRoles(request: AuthorizationRequest<T>): Set<Role> {
@@ -149,6 +154,33 @@ class AuthzenAuthorizationService(
         return mappers.any { it.supports(from, to) }
     }
 
+    private fun <T> getPermission(request: AuthorizationRequest<T>, evaluations:  List<AuthzenEvaluationResponseTyped<AuthzenAuthorizationService.AuthzenPermissionContext>>): List<Permission> {
+        val userRoles = if (request.user == null) {
+            SecurityUtils.getCurrentUserRoles()
+        } else {
+            runWithoutAuthorization { userManagementService.findByUsername(request.user) }
+                ?.roles
+                ?: return emptyList()
+        }
+
+        return evaluations.flatMap { decision ->
+            decision.context?.filter.orEmpty().map { filter -> mapToPermission(filter) }
+        }.filter {
+            userRoles.contains(it.role.key)
+        }.filter { permission ->
+            request.resourceType == permission.resourceType
+                && permission.actions.contains(request.action)
+                && if (request is EntityAuthorizationRequest) {
+                permission.appliesInContext(request.context?.resourceType, request.context?.entity)
+            } else if (request is RelatedEntityAuthorizationRequest)
+            {
+                permission.appliesInContext(request.context?.resourceType, request.context?.entity)
+            } else {
+                val requestContextResourceType: Class<*>? = null
+                permission.appliesInContext(requestContextResourceType, null)
+            }
+        }
+    }
     private fun getPermissions(context: AuthorizationRequest<*>): List<Permission> {
         val userRoles = if (context.user == null) {
             SecurityUtils.getCurrentUserRoles()
@@ -223,7 +255,7 @@ class AuthzenAuthorizationService(
         } as AuthorizationSpecificationFactory<T>?)
             ?: throw AccessDeniedException("Missing AuthorizationSpecificationFactory<${request.resourceType.name}>")
 
-        return AuthzenAuthorizationSpecification(factory.create(request, permissionSupplier), request, permissionSupplier)
+        return factory.create(request, permissionSupplier)
     }
 
     private fun logPermissions(request: AuthorizationRequest<*>, permissionSupplier: Supplier<List<Permission>>) {

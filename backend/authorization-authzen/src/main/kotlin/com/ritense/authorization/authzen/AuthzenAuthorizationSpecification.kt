@@ -11,13 +11,14 @@ import jakarta.persistence.criteria.Root
 import org.springframework.data.jpa.domain.Specification
 
 class AuthzenAuthorizationSpecification<T: Any>(
+    private val decision: Boolean,
     private val authorizationSpecification: AuthorizationSpecification<T>,
     authRequest: AuthorizationRequest<T>,
                                                 permissionSupplier: () -> List<Permission>):
     AuthorizationSpecification<T>(authRequest, permissionSupplier) {
 
     override fun isAuthorized(): Boolean {
-        return authorizationSpecification.isAuthorized()
+        return decision && authorizationSpecification.isAuthorized()
     }
 
     override fun identifierToEntity(identifier: String): T {
