@@ -18,6 +18,8 @@ package com.ritense.zakenapi.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.ritense.authorization.AuthorizationService
+import com.ritense.case.service.CaseDefinitionService
+import com.ritense.case_.authorization.CaseDefinitionSpecificationFactory
 import com.ritense.case_.listener.ZaakTypeLinkCaseEventListener
 import com.ritense.catalogiapi.service.CatalogiService
 import com.ritense.catalogiapi.service.ZaaktypeUrlProvider
@@ -37,10 +39,13 @@ import com.ritense.temporaryresource.repository.ResourceStorageMetadataRepositor
 import com.ritense.valtimo.contract.annotation.ProcessBean
 import com.ritense.valtimo.contract.authentication.UserManagementService
 import com.ritense.valtimo.contract.case_.CaseDefinitionChecker
+import com.ritense.valtimo.contract.database.QueryDialectHelper
 import com.ritense.valtimo.contract.document.CaseDocumentResolver
 import com.ritense.valueresolver.ValueResolverService
 import com.ritense.zakenapi.ZaakUrlProvider
 import com.ritense.zakenapi.ZakenApiPluginFactory
+import com.ritense.zakenapi.authorization.CaseDefinitionZaakTypeLinkMapper
+import com.ritense.zakenapi.authorization.ZaakTypeLinkSpecificationFactory
 import com.ritense.zakenapi.client.ZakenApiClient
 import com.ritense.zakenapi.exporter.ZaakTypeLinkExporter
 import com.ritense.zakenapi.formflow.ZakenFormFlow
@@ -92,6 +97,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Lazy
 import org.springframework.context.annotation.Primary
 import org.springframework.core.annotation.Order
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
@@ -421,6 +427,22 @@ class ZakenApiAutoConfiguration {
     @ConditionalOnMissingBean(ZaakSpecificationFactory::class)
     fun zaakSpecificationFactory(): ZaakSpecificationFactory {
         return ZaakSpecificationFactory()
+    }
+
+    @Bean
+    fun caseDefinitionZaakTypeLinkMapper(zaakTypeLinkRepository: ZaakTypeLinkRepository): CaseDefinitionZaakTypeLinkMapper {
+        return CaseDefinitionZaakTypeLinkMapper(zaakTypeLinkRepository)
+    }
+
+    @Bean
+    fun zaakTypeLinkSpecificationFactory(
+        zaakTypeLinkRepository: ZaakTypeLinkRepository,
+        queryDialectHelper: QueryDialectHelper
+    ): ZaakTypeLinkSpecificationFactory {
+        return ZaakTypeLinkSpecificationFactory(
+            zaakTypeLinkRepository,
+            queryDialectHelper
+        )
     }
 
     @Bean

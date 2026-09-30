@@ -90,9 +90,10 @@ class AuthzenAuthorizationAutoConfiguration {
         client: AuthzenPdpClient,
         requestMapper: AuthzenRequestMapper,
         actionProviders: List<ResourceActionProvider<*>>,
-        userManagementService: UserManagementService
+        userManagementService: UserManagementService,
+        objectMapper: ObjectMapper,
     ): AuthzenAuthorizationService {
-        val service = AuthzenAuthorizationService(authorizationSpecificationFactories, mappers, client, requestMapper, actionProviders, userManagementService)
+        val service = AuthzenAuthorizationService(authorizationSpecificationFactories, mappers, client, requestMapper, actionProviders, userManagementService, objectMapper)
         AuthorizationServiceHolder(service)
         logger.warn {
             "AuthZEN authorization is ENABLED. The PDP now answers every point check, and query " +

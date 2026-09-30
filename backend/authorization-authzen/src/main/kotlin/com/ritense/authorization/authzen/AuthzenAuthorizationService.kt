@@ -17,6 +17,9 @@
 package com.ritense.authorization.authzen
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.ritense.authorization.Action
 import com.ritense.authorization.AuthorizationContext
 import com.ritense.authorization.AuthorizationContext.Companion.runWithoutAuthorization
@@ -34,6 +37,11 @@ import com.ritense.authorization.authzen.client.dto.AuthzenSubjectSearchRequest
 import com.ritense.authorization.authzen.mapping.AuthzenRequestMapper
 import com.ritense.authorization.permission.ConditionContainer
 import com.ritense.authorization.permission.Permission
+import com.ritense.authorization.permission.condition.ContainerPermissionCondition
+import com.ritense.authorization.permission.condition.FieldPermissionCondition
+import com.ritense.authorization.permission.condition.PermissionCondition
+import com.ritense.authorization.permission.condition.PermissionConditionOperator
+import com.ritense.authorization.permission.condition.PermissionConditionType
 import com.ritense.authorization.request.AuthorizationRequest
 import com.ritense.authorization.request.EntityAuthorizationRequest
 import com.ritense.authorization.request.RelatedEntityAuthorizationRequest
@@ -51,6 +59,7 @@ import java.util.UUID
 import java.util.function.Supplier
 import kotlin.collections.filter
 import kotlin.collections.joinToString
+import kotlin.reflect.typeOf
 
 @Service
 @SkipComponentScan
@@ -61,6 +70,7 @@ class AuthzenAuthorizationService(
     private val requestMapper: AuthzenRequestMapper,
     private val actionProviders: List<ResourceActionProvider<*>>,
     private val userManagementService: UserManagementService,
+    private val objectMapper: ObjectMapper,
 ) : AuthorizationService {
 
     override fun <T : Any> requirePermission(request: AuthorizationRequest<T>) {
@@ -117,9 +127,9 @@ class AuthzenAuthorizationService(
         request: AuthorizationRequest<T>,
         permissions: List<Permission>?,
     ): AuthorizationSpecification<T>  {
-        val evaluations = client.evaluateAllWithResponseType(requestMapper.map(request), AuthzenPermissionContext::class.java)
+        val evaluations = client.evaluateAllWithResponseType(requestMapper.map(request), ObjectNode::class.java)
 
-        val usedPermissions= { permissions ?: run { getPermission(request, evaluations) } }
+        val usedPermissions = { permissions ?: run { getPermission(request, evaluations) } }
 
         return AuthzenAuthorizationSpecification(evaluations.any { it.decision }, getAuthorizationSpecification(request,
             usedPermissions, enablePermissionLogging = true), request, usedPermissions)
@@ -135,9 +145,9 @@ class AuthzenAuthorizationService(
 
     override fun getPermissions(resourceType: Class<*>, action: Action<*>): List<Permission> = client.evaluateAllWithResponseType(
             requestMapper.map(resourceType, action),
-            AuthzenPermissionContext::class.java,
+        ObjectNode::class.java,
         ).flatMap { decision ->
-            decision.context?.filter.orEmpty().map { filter -> mapToPermission(filter) }
+            decision.context?.get("filter")?.flatMap { filter -> mapToPermissions(resourceType, action, filter) } ?: emptyList()
         }
 
     override fun <FROM, TO> getMapper(
@@ -154,7 +164,7 @@ class AuthzenAuthorizationService(
         return mappers.any { it.supports(from, to) }
     }
 
-    private fun <T> getPermission(request: AuthorizationRequest<T>, evaluations:  List<AuthzenEvaluationResponseTyped<AuthzenAuthorizationService.AuthzenPermissionContext>>): List<Permission> {
+    private fun <T> getPermission(request: AuthorizationRequest<T>, evaluations:  List<AuthzenEvaluationResponseTyped<ObjectNode>>): List<Permission> {
         val userRoles = if (request.user == null) {
             SecurityUtils.getCurrentUserRoles()
         } else {
@@ -164,7 +174,7 @@ class AuthzenAuthorizationService(
         }
 
         return evaluations.flatMap { decision ->
-            decision.context?.filter.orEmpty().map { filter -> mapToPermission(filter) }
+            decision.context?.get("filter")?.flatMap { filter -> mapToPermissions(request.resourceType, request.action, filter) } ?: emptyList()
         }.filter {
             userRoles.contains(it.role.key)
         }.filter { permission ->
@@ -180,33 +190,6 @@ class AuthzenAuthorizationService(
                 permission.appliesInContext(requestContextResourceType, null)
             }
         }
-    }
-    private fun getPermissions(context: AuthorizationRequest<*>): List<Permission> {
-        val userRoles = if (context.user == null) {
-            SecurityUtils.getCurrentUserRoles()
-        } else {
-            runWithoutAuthorization { userManagementService.findByUsername(context.user) }
-                ?.roles
-                ?: return emptyList()
-        }
-
-        return getPermissions(context.resourceType, context.action)
-            .filter {
-                userRoles.contains(it.role.key)
-            }
-           .filter { permission ->
-                context.resourceType == permission.resourceType
-                    && permission.actions.contains(context.action)
-                    && if (context is EntityAuthorizationRequest) {
-                    permission.appliesInContext(context.context?.resourceType, context.context?.entity)
-                } else if (context is RelatedEntityAuthorizationRequest)
-                {
-                    permission.appliesInContext(context.context?.resourceType, context.context?.entity)
-                } else {
-                    val requestContextResourceType: Class<*>? = null
-                    permission.appliesInContext(requestContextResourceType, null)
-                }
-            }
     }
 
     /**
@@ -229,16 +212,49 @@ class AuthzenAuthorizationService(
         val contextConditionContainer: ConditionContainer? = null,
     )
 
-    private fun mapToPermission(map: AuthzenPermission): Permission {
-        return Permission(
-            id = UUID.randomUUID(),
-            resourceType = Class.forName(map.resourceType),
-            actions = map.actions.map { Action<Any>(it) }.toMutableList(),
-            role = Role(id = UUID.randomUUID(), key =  map.role),
-            conditionContainer = map.conditionContainer,
-            contextResourceType = null,
-            contextConditionContainer = null,
-        )
+    private fun mapToPermissions(resourceType: Class<*>, action: Action<*>, node: JsonNode): List<Permission> {
+        if (node.has("type") && node.get("type").asText() == "ValtimoAuthorizationPermission") {
+            val permission = objectMapper.convertValue(node, AuthzenPermission::class.java)
+
+            return listOf(Permission(
+                id = UUID.randomUUID(),
+                resourceType = Class.forName(permission.resourceType),
+                actions = permission.actions.map { Action<Any>(it) }.toMutableList(),
+                role = Role(id = UUID.randomUUID(), key =  permission.role),
+                conditionContainer = permission.conditionContainer,
+                contextResourceType = null,
+                contextConditionContainer = null,
+            ))
+        } else if (node.has("type") && node.get("type").asText() == "ZaakTypePermission") {
+            return when (resourceType.name) {
+                "com.ritense.case_.domain.definition.CaseDefinition",
+                    "com.ritense.document.domain.impl.JsonSchemaDocument" -> node.get("urls")
+                    .mapIndexed { _, nodes -> nodes.asText() }
+                    .windowed(50, 50, true)
+                    .map { urls -> Permission(
+                        id = UUID.randomUUID(),
+                        resourceType = resourceType,
+                        actions = mutableListOf(action),
+                        role = Role(id = UUID.randomUUID(), key = node.get("role").asText()),
+                        conditionContainer = ConditionContainer(listOf(
+                            ContainerPermissionCondition(
+                                resourceType = Class.forName("com.ritense.zakenapi.domain.ZaakTypeLink"),
+                                conditions = listOf(
+                                    FieldPermissionCondition(
+                                        field = "zaakTypeUrl",
+                                        operator = PermissionConditionOperator.IN,
+                                        value = urls
+                                    )
+                                )
+                            )
+                        )))
+                    } else ->
+                        throw AccessDeniedException("No permissions found for $resourceType.")
+            }
+
+        } else {
+            throw AccessDeniedException("No permission found for $node.")
+        }
     }
 
     private fun <T : Any> getAuthorizationSpecification(
