@@ -5,10 +5,8 @@ import com.ritense.authorization.request.AuthorizationRequest
 import com.ritense.authorization.specification.AuthorizationSpecification
 import jakarta.persistence.criteria.AbstractQuery
 import jakarta.persistence.criteria.CriteriaBuilder
-import jakarta.persistence.criteria.CriteriaQuery
 import jakarta.persistence.criteria.Predicate
 import jakarta.persistence.criteria.Root
-import org.springframework.data.jpa.domain.Specification
 
 class AuthzenAuthorizationSpecification<T: Any>(
     private val decision: Boolean,
@@ -25,27 +23,16 @@ class AuthzenAuthorizationSpecification<T: Any>(
         return authorizationSpecification.identifierToEntity(identifier)
     }
 
-    override fun toPredicate(
-        root: Root<T>,
-        query: CriteriaQuery<*>?,
-        criteriaBuilder: CriteriaBuilder
-    ): Predicate? {
-        return authorizationSpecification.toPredicate(root, query, criteriaBuilder)
-    }
-
+    /**
+     * A PDP deny filters out every row; otherwise the PDP-published permissions filter the query.
+     * The `CriteriaQuery` overload and `and`/`or` are inherited, so they all route through here.
+     */
     override fun toPredicate(
         root: Root<T>,
         query: AbstractQuery<*>,
         criteriaBuilder: CriteriaBuilder
     ): Predicate {
-        return authorizationSpecification.toPredicate(root, query, criteriaBuilder)
-    }
-
-    override fun and(other: Specification<T?>?): Specification<T?> {
-        return authorizationSpecification.and(other)
-    }
-
-    override fun or(other: Specification<T?>?): Specification<T?> {
-        return authorizationSpecification.or(other)
+        return if (decision) authorizationSpecification.toPredicate(root, query, criteriaBuilder)
+        else criteriaBuilder.disjunction()
     }
 }

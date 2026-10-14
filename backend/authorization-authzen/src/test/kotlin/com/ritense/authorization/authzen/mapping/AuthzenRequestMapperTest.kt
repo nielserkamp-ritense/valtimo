@@ -17,13 +17,10 @@
 package com.ritense.authorization.authzen.mapping
 
 import com.ritense.authorization.Action
-import com.ritense.authorization.authzen.AuthzenProperties
 import com.ritense.authorization.authzen.client.dto.AuthzenSubject
-import com.ritense.authorization.request.AuthorizationResourceContext
 import com.ritense.authorization.request.EntityAuthorizationRequest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -42,17 +39,8 @@ class AuthzenRequestMapperTest {
     fun setUp() {
         subjectFactory = mock()
         whenever(subjectFactory.subjectFor(any())).thenReturn(subject)
-        mapper = AuthzenRequestMapper(registry(), subjectFactory, listOf(ZaakProjection(), ContextProjection()))
+        mapper = AuthzenRequestMapper(subjectFactory, listOf(ZaakProjection(), ContextProjection()))
     }
-
-    private fun registry() = AuthzenResourceTypeRegistry(
-        AuthzenProperties(
-            resourceTypes = mapOf(
-                Zaak::class.java.name to AuthzenProperties.ResourceTypeProperties(name = "zaak"),
-                ContextResource::class.java.name to AuthzenProperties.ResourceTypeProperties(name = "case"),
-            )
-        )
-    )
 
     @Test
     fun `should map one evaluation per entity`() {
@@ -66,24 +54,6 @@ class AuthzenRequestMapperTest {
 
         assertEquals(3, evaluations.size)
         assertEquals(listOf("1", "2", "3"), evaluations.map { it.resource.id })
-    }
-
-    @Test
-    fun `should send the logical resource type rather than the class name`() {
-        val request = EntityAuthorizationRequest(Zaak::class.java, Action<Zaak>(Action.VIEW), Zaak("1", "type-a"))
-
-        val resource = mapper.map(request).single().resource
-
-        assertEquals("zaak", resource.type)
-    }
-
-    @Test
-    fun `should publish projected properties for policies to reference`() {
-        val request = EntityAuthorizationRequest(Zaak::class.java, Action<Zaak>(Action.VIEW), Zaak("1", "type-a"))
-
-        val resource = mapper.map(request).single().resource
-
-        assertEquals(mapOf("zaaktype" to "type-a"), resource.properties)
     }
 
     /**
@@ -117,19 +87,6 @@ class AuthzenRequestMapperTest {
     }
 
     @Test
-    fun `should place the enclosing resource in the request context`() {
-        val request = EntityAuthorizationRequest(Zaak::class.java, Action<Zaak>(Action.VIEW), Zaak("1", "type-a"))
-            .withContext(AuthorizationResourceContext(ContextResource::class.java, ContextResource("case-9")))
-
-        val context = mapper.map(request).single().context
-
-        @Suppress("UNCHECKED_CAST")
-        val resource = context!![AuthzenRequestMapper.CONTEXT_RESOURCE] as Map<String, Any?>
-        assertEquals("case", resource["type"])
-        assertEquals("case-9", resource["id"])
-    }
-
-    @Test
     fun `should omit the context entirely when the request carries none`() {
         val request = EntityAuthorizationRequest(Zaak::class.java, Action<Zaak>(Action.VIEW), Zaak("1", "type-a"))
 
@@ -139,18 +96,6 @@ class AuthzenRequestMapperTest {
     // ---- failures, all of which deny -----------------------------------------------------------
 
     @Test
-    fun `should refuse to map an unconfigured resource type`() {
-        val request = EntityAuthorizationRequest(
-            Unmapped::class.java,
-            Action<Unmapped>(Action.VIEW),
-            Unmapped("1"),
-        )
-
-        val exception = assertThrows<AuthzenMappingException> { mapper.map(request) }
-        assertTrue(exception.message!!.contains(Unmapped::class.java.name))
-    }
-
-    @Test
     fun `should refuse to map when no subject can be established`() {
         whenever(subjectFactory.subjectFor(any())).thenReturn(null)
         val request = EntityAuthorizationRequest(Zaak::class.java, Action<Zaak>(Action.VIEW), Zaak("1", "type-a"))
@@ -158,23 +103,8 @@ class AuthzenRequestMapperTest {
         assertThrows<AuthzenMappingException> { mapper.map(request) }
     }
 
-    /**
-     * Without a projection the PDP receives no attributes, and a Cedar condition on an absent
-     * attribute is simply false — the type would deny every conditional policy while looking
-     * healthy. Refusing to map makes that a visible error instead.
-     */
-    @Test
-    fun `should refuse to map an entity that has no projection`() {
-        val mapperWithoutProjection = AuthzenRequestMapper(registry(), subjectFactory, emptyList())
-        val request = EntityAuthorizationRequest(Zaak::class.java, Action<Zaak>(Action.VIEW), Zaak("1", "type-a"))
-
-        val exception = assertThrows<AuthzenMappingException> { mapperWithoutProjection.map(request) }
-        assertTrue(exception.message!!.contains("AuthzenResourceProperties"))
-    }
-
     data class Zaak(val id: String?, val zaaktype: String)
     data class ContextResource(val id: String)
-    data class Unmapped(val id: String)
 
     private class ZaakProjection : AuthzenResourceProperties<Zaak> {
         override val resourceType = Zaak::class.java

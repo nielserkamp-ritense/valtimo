@@ -42,13 +42,8 @@ class AuthzenSubjectFactory(
      * Null is a denial. It mirrors `ValtimoAuthorizationService.getPermissions`, which returns an
      * empty permission list — and therefore denies — when a named user cannot be resolved.
      */
-    fun subjectFor(request: AuthorizationRequest<*>): AuthzenSubject? {
-        return request.user?.let { delegateUserSubject(it) } ?: run { currentUserSubject() } ?: AuthzenSubject(
-            type = "system",
-            id = "valtimo",
-            properties = mapOf()
-        )
-    }
+    fun subjectFor(request: AuthorizationRequest<*>): AuthzenSubject? =
+        if (request.user == null) currentUserSubject() else delegateUserSubject(request.user!!)
 
     fun currentUserSubject(): AuthzenSubject? {
         val login = SecurityUtils.getCurrentUserLogin()

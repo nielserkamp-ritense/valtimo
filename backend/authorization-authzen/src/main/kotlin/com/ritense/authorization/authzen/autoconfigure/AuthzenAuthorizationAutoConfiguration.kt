@@ -96,10 +96,9 @@ class AuthzenAuthorizationAutoConfiguration {
         val service = AuthzenAuthorizationService(authorizationSpecificationFactories, mappers, client, requestMapper, actionProviders, userManagementService, objectMapper)
         AuthorizationServiceHolder(service)
         logger.warn {
-            "AuthZEN authorization is ENABLED. The PDP now answers every point check, and query " +
-                "filtering (getAuthorizationSpecification), getAuthorizedRoles, getPermissions and " +
-                "getMapper/hasMapper are unimplemented — list pages, dashboards and task lists will " +
-                "fail. This configuration is a spike and is not suitable for an environment with users."
+            "AuthZEN authorization is ENABLED. The PDP answers point checks and publishes the " +
+                "permissions used for query filtering, getAuthorizedRoles and getPermissions. " +
+                "This configuration is a spike and is not suitable for an environment with users."
         }
         return service
     }

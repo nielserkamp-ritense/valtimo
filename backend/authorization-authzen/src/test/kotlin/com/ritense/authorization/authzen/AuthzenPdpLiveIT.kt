@@ -31,9 +31,10 @@ import com.ritense.authorization.authzen.client.dto.AuthzenSubject
 import com.ritense.authorization.authzen.client.dto.AuthzenSubjectSearchRequest
 import com.ritense.authorization.authzen.mapping.AuthzenRequestMapper
 import com.ritense.authorization.authzen.mapping.AuthzenResourceProperties
-import com.ritense.authorization.authzen.mapping.AuthzenResourceTypeRegistry
 import com.ritense.authorization.authzen.mapping.AuthzenSubjectFactory
 import com.ritense.authorization.request.EntityAuthorizationRequest
+import com.ritense.authorization.specification.impl.DenyAuthorizationSpecificationFactory
+import com.ritense.authorization.specification.impl.NoopAuthorizationSpecificationFactory
 import com.ritense.valtimo.contract.authentication.UserManagementService
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -93,11 +94,21 @@ class AuthzenPdpLiveIT {
         client = AuthzenPdpClient(WebClient.builder().build(), objectMapper, properties)
         val userManagementService: UserManagementService = mock()
         val mapper = AuthzenRequestMapper(
-            AuthzenResourceTypeRegistry(properties),
             AuthzenSubjectFactory(userManagementService, properties),
             listOf(ObjectProjection(), ZaakProjection(), ManagedUserProjection()),
         )
-        service = AuthzenAuthorizationService(client, mapper, emptyList())
+        service = AuthzenAuthorizationService(
+            authorizationSpecificationFactories = listOf(
+                NoopAuthorizationSpecificationFactory<Any>(),
+                DenyAuthorizationSpecificationFactory<Any>(),
+            ),
+            mappers = emptyList(),
+            client = client,
+            requestMapper = mapper,
+            actionProviders = emptyList(),
+            userManagementService = userManagementService,
+            objectMapper = objectMapper,
+        )
     }
 
     @AfterEach

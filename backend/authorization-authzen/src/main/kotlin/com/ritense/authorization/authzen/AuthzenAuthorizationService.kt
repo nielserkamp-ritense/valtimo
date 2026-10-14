@@ -30,10 +30,12 @@ import com.ritense.authorization.ValtimoAuthorizationService
 import com.ritense.authorization.authzen.client.AuthzenPdpClient
 import com.ritense.authorization.authzen.client.dto.AuthzenAction
 import com.ritense.authorization.authzen.client.dto.AuthzenEvaluationRequest
+import com.ritense.authorization.authzen.client.AuthzenPdpException
 import com.ritense.authorization.authzen.client.dto.AuthzenEvaluationResponseTyped
 import com.ritense.authorization.authzen.client.dto.AuthzenResource
 import com.ritense.authorization.authzen.client.dto.AuthzenSearchSubject
 import com.ritense.authorization.authzen.client.dto.AuthzenSubjectSearchRequest
+import com.ritense.authorization.authzen.mapping.AuthzenMappingException
 import com.ritense.authorization.authzen.mapping.AuthzenRequestMapper
 import com.ritense.authorization.permission.ConditionContainer
 import com.ritense.authorization.permission.Permission
@@ -98,17 +100,14 @@ class AuthzenAuthorizationService(
     }
 
     /**
-     * The [permissions] argument is a PBAC caching optimisation — the caller pre-fetched permission
-     * rows to avoid a per-row database read. A PDP holds its own policy, so the argument has no
-     * meaning and is ignored; the request is answered as an ordinary point check.
-     *
-     * One production call site: `ZaakDocumentService.kt:388`, looping over ZGW documents. That is a
-     * pure point-check loop over a resource type with no query filtering, so it works fully here.
+     * Decided locally against [permissions], as in `ValtimoAuthorizationService`. The one production
+     * caller (`ZaakDocumentService.kt:388`) obtains them from [getPermissions], so they are already
+     * the permissions the PDP published.
      */
     override fun <T : Any> hasPermission(
         request: AuthorizationRequest<T>,
         permissions: List<Permission>,
-    ): Boolean = hasPermission(request)
+    ): Boolean = getAuthorizationSpecification(request, permissions).isAuthorized()
 
     /**
      * Unchanged from `ValtimoAuthorizationService`. This reports the action vocabulary a resource
@@ -127,11 +126,25 @@ class AuthzenAuthorizationService(
         request: AuthorizationRequest<T>,
         permissions: List<Permission>?,
     ): AuthorizationSpecification<T>  {
-        val evaluations = client.evaluateAllWithResponseType(requestMapper.map(request), ObjectNode::class.java)
+        // Caller-supplied permissions come from PBAC's own nested evaluation (container conditions,
+        // related entities); the bypass and the IGNORE/DENY sentinels are handled by the Noop and
+        // Deny factories. None of these is a decision for the PDP.
+        if (permissions != null
+            || AuthorizationContext.ignoreAuthorization
+            || request.action.key == Action.IGNORE
+            || request.action.key == Action.DENY
+        ) {
+            return getAuthorizationSpecification(request, { permissions ?: emptyList() }, enablePermissionLogging = true)
+        }
 
-        val usedPermissions = { permissions ?: run { getPermission(request, evaluations) } }
+        val evaluations = evaluate { requestMapper.map(request) }
 
-        return AuthzenAuthorizationSpecification(evaluations.any { it.decision }, getAuthorizationSpecification(request,
+        val usedPermissions = lazySupplier { getPermission(request, evaluations) }
+
+        // Every entity must be permitted, as in `AuthorizationSpecification.isAuthorizedForEntity`.
+        val decision = evaluations.isNotEmpty() && evaluations.all { it.decision }
+
+        return AuthzenAuthorizationSpecification(decision, getAuthorizationSpecification(request,
             usedPermissions, enablePermissionLogging = true), request, usedPermissions)
     }
 
@@ -143,10 +156,8 @@ class AuthzenAuthorizationService(
             .toSet()
     }
 
-    override fun getPermissions(resourceType: Class<*>, action: Action<*>): List<Permission> = client.evaluateAllWithResponseType(
-            requestMapper.map(resourceType, action),
-        ObjectNode::class.java,
-        ).flatMap { decision ->
+    override fun getPermissions(resourceType: Class<*>, action: Action<*>): List<Permission> =
+        evaluate { requestMapper.map(resourceType, action) }.flatMap { decision ->
             decision.context?.get("filter")?.flatMap { filter -> mapToPermissions(resourceType, action, filter) } ?: emptyList()
         }
 
@@ -162,6 +173,19 @@ class AuthzenAuthorizationService(
 
     override fun hasMapper(from: Class<*>, to: Class<*>): Boolean {
         return mappers.any { it.supports(from, to) }
+    }
+
+    /** A PDP or mapping failure denies, as an empty permission list does in `ValtimoAuthorizationService`. */
+    private fun evaluate(requests: () -> List<AuthzenEvaluationRequest>): List<AuthzenEvaluationResponseTyped<ObjectNode>> {
+        return try {
+            client.evaluateAllWithResponseType(requests(), ObjectNode::class.java)
+        } catch (e: AuthzenPdpException) {
+            logger.warn(e) { "AuthZEN PDP could not be consulted; denying." }
+            emptyList()
+        } catch (e: AuthzenMappingException) {
+            logger.warn(e) { "Authorization request could not be mapped to AuthZEN; denying." }
+            emptyList()
+        }
     }
 
     private fun <T> getPermission(request: AuthorizationRequest<T>, evaluations:  List<AuthzenEvaluationResponseTyped<ObjectNode>>): List<Permission> {
@@ -222,8 +246,8 @@ class AuthzenAuthorizationService(
                 actions = permission.actions.map { Action<Any>(it) }.toMutableList(),
                 role = Role(id = UUID.randomUUID(), key =  permission.role),
                 conditionContainer = permission.conditionContainer,
-                contextResourceType = null,
-                contextConditionContainer = null,
+                contextResourceType = permission.contextResourceType?.let { Class.forName(it) },
+                contextConditionContainer = permission.contextConditionContainer,
             ))
         } else if (node.has("type") && node.get("type").asText() == "ZaakTypePermission") {
             return when (resourceType.name) {
@@ -248,12 +272,15 @@ class AuthzenAuthorizationService(
                                 )
                             )
                         )))
-                    } else ->
-                        throw AccessDeniedException("No permissions found for $resourceType.")
+                    } else -> {
+                        logger.warn { "ZaakTypePermission does not apply to $resourceType; ignoring it." }
+                        emptyList()
+                    }
             }
 
         } else {
-            throw AccessDeniedException("No permission found for $node.")
+            logger.warn { "Unknown permission in PDP filter, ignoring it: $node" }
+            return emptyList()
         }
     }
 
@@ -295,6 +322,12 @@ class AuthzenAuthorizationService(
                 logger.debug { logLine }
             }
         }
+    }
+
+    private fun <T> lazySupplier(delegate: () -> T) = object : () -> T {
+        private val value by lazy(delegate)
+
+        override fun invoke() = value
     }
 
     companion object {

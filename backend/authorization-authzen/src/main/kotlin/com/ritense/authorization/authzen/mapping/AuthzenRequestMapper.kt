@@ -25,7 +25,6 @@ import com.ritense.authorization.request.AuthorizationRequest
 import com.ritense.authorization.request.AuthorizationResourceContext
 import com.ritense.authorization.request.EntityAuthorizationRequest
 import com.ritense.authorization.request.RelatedEntityAuthorizationRequest
-import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.jvm.isAccessible
 
@@ -156,29 +155,18 @@ class AuthzenRequestMapper(
     ): Map<String, Any?>? {
         val context = buildMap<String, Any?> {
             resourceContext?.let { ctx ->
-                val logicalType = ctx.resourceType.name
-                if (logicalType == null) {
-                    // Not fatal: the context narrows a decision, and a policy that needs it will
-                    // deny on its absence. Denying here instead would break every request that
-                    // merely happens to carry a context.
-                    logger.debug {
-                        "Authorization context type '${ctx.resourceType.name}' has no AuthZEN mapping; " +
-                            "omitting it from the request."
-                    }
-                } else {
-                    // AuthorizationResourceContext<*> hands back a captured type; the projector
-                    // lookup is by runtime class, so widen it here.
-                    val contextEntity: Any? = ctx.entity
-                    val projector = projectorFor(contextEntity)
-                    put(
-                        CONTEXT_RESOURCE,
-                        mapOf(
-                            "type" to logicalType,
-                            "id" to (contextEntity?.let { projector?.idOf(it) } ?: ANY_RESOURCE_ID),
-                            "properties" to (contextEntity?.let { projector?.propertiesOf(it) } ?: emptyMap()),
-                        )
+                // AuthorizationResourceContext<*> hands back a captured type; the projector
+                // lookup is by runtime class, so widen it here.
+                val contextEntity: Any? = ctx.entity
+                val projector = projectorFor(contextEntity)
+                put(
+                    CONTEXT_RESOURCE,
+                    mapOf(
+                        "type" to ctx.resourceType.name,
+                        "id" to (contextEntity?.let { projector?.idOf(it) } ?: ANY_RESOURCE_ID),
+                        "properties" to (contextEntity?.let { projector?.propertiesOf(it) } ?: emptyMap()),
                     )
-                }
+                )
             }
             related?.let { put(CONTEXT_RELATED, it) }
         }
@@ -200,17 +188,8 @@ class AuthzenRequestMapper(
         return context.ifEmpty { null }
     }
 
-    private fun relatedOf(request: RelatedEntityAuthorizationRequest<*>): Map<String, Any?>? {
-        val logicalType = request.resourceType.name
-        if (logicalType == null) {
-            logger.debug {
-                "Related resource type '${request.relatedResourceType.name}' has no AuthZEN mapping; " +
-                    "omitting it from the request."
-            }
-            return null
-        }
-        return mapOf("type" to logicalType, "id" to request.relatedResourceId)
-    }
+    private fun relatedOf(request: RelatedEntityAuthorizationRequest<*>): Map<String, Any?> =
+        mapOf("type" to request.relatedResourceType.name, "id" to request.relatedResourceId)
 
     @Suppress("UNCHECKED_CAST")
     private fun projectorFor(entity: Any?): AuthzenResourceProperties<Any>? {
@@ -226,8 +205,6 @@ class AuthzenRequestMapper(
         "'${request.action.key}:${request.resourceType.simpleName}'"
 
     companion object {
-        private val logger = KotlinLogging.logger {}
-
         /**
          * Sent as `resource.id` when a request is not about one specific instance.
          *
