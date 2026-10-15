@@ -61,7 +61,6 @@ class CaseDefinitionZaakTypeLinkMapper(
     }
 
     override fun supports(fromClass: Class<*>, toClass: Class<*>): Boolean {
-        println("================= YES 3")
         return fromClass == CaseDefinition::class.java && toClass == ZaakTypeLink::class.java
     }
 }

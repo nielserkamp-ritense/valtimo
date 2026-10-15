@@ -26,6 +26,7 @@ import jakarta.persistence.criteria.AbstractQuery
 import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.Predicate
 import jakarta.persistence.criteria.Root
+import java.net.URI
 
 @JsonTypeName(FIELD)
 data class FieldPermissionCondition<V>(
@@ -41,7 +42,8 @@ data class FieldPermissionCondition<V>(
     }
 
     override fun <T : Any> isValid(entity: T): Boolean {
-        val fieldValue = findEntityFieldValue(entity, field)
+        // A policy can only express a URI as a string. The database query converts it already, so compare it as a string here too.
+        val fieldValue = findEntityFieldValue(entity, field).let { if (it is URI) it.toString() else it }
         val resolvedValue = resolveValue()
         return operator.evaluate(fieldValue, resolvedValue)
     }

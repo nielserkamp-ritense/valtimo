@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.ritense.authorization.permission.condition.PermissionConditionOperator.EQUAL_TO
 import com.ritense.authorization.permission.condition.PermissionConditionOperator.GREATER_THAN
+import com.ritense.authorization.permission.condition.PermissionConditionOperator.IN
 import com.ritense.authorization.permission.condition.PermissionConditionOperator.LESS_THAN
 import com.ritense.authorization.permission.condition.PermissionConditionOperator.LIST_CONTAINS
 import com.ritense.authorization.permission.condition.PermissionConditionOperator.NOT_EQUAL_TO
@@ -38,6 +39,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.skyscreamer.jsonassert.JSONAssert
 import org.skyscreamer.jsonassert.JSONCompareMode
+import java.net.URI
 import java.time.LocalDate
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -266,4 +268,20 @@ class FieldPermissionConditionTest {
         MatcherAssert.assertThat(result.operator, Matchers.equalTo(GREATER_THAN))
         MatcherAssert.assertThat(result.value, Matchers.equalTo(true))
     }
+
+    @Test
+    fun `should compare a URI field with a string value`() {
+        val entity = UriEntity(URI("http://localhost:8001/catalogi/api/v1/zaaktypen/1"))
+
+        assertTrue(FieldPermissionCondition("url", EQUAL_TO, "http://localhost:8001/catalogi/api/v1/zaaktypen/1").isValid(entity))
+        assertFalse(FieldPermissionCondition("url", EQUAL_TO, "http://localhost:8001/catalogi/api/v1/zaaktypen/2").isValid(entity))
+        assertTrue(FieldPermissionCondition("url", NOT_EQUAL_TO, "http://localhost:8001/catalogi/api/v1/zaaktypen/2").isValid(entity))
+        assertTrue(
+            FieldPermissionCondition(
+                "url", IN, listOf("http://localhost:8001/catalogi/api/v1/zaaktypen/1", "http://other")
+            ).isValid(entity)
+        )
+    }
+
+    data class UriEntity(val url: URI)
 }
