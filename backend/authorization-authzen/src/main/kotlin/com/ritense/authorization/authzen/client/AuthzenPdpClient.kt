@@ -326,7 +326,7 @@ open class AuthzenPdpClient(
     companion object {
         private val logger = KotlinLogging.logger {}
 
-        /** `{"evaluations":[],"options":{"evaluation_semantics":"execute_all"}}` and slack. */
+        /** `{"evaluations":[],"options":{"evaluations_semantic":"execute_all"}}` and slack. */
         private const val ENVELOPE_OVERHEAD_BYTES = 128
 
         /**

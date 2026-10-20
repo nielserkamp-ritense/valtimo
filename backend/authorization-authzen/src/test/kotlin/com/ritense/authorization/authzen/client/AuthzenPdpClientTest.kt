@@ -124,9 +124,8 @@ class AuthzenPdpClientTest {
         val body = """
             {"context":{"codes":["ZAAK_VIEW_ROLE_ADMIN"],
                         "filterOn":{"zaaktype":["$PERMITTED_ZAAKTYPE"]},
-                        "id":"ok",
                         "policies":["zaak-role-admin-view"],
-                        "reason_user":{"en":"ROLE_ADMIN may view a zaak of the permitted zaaktype"}},
+                        "reason":{"en":"ROLE_ADMIN may view a zaak of the permitted zaaktype"}},
              "decision":true}
         """.trimIndent()
 
@@ -137,14 +136,14 @@ class AuthzenPdpClientTest {
         assertEquals(listOf("zaak-role-admin-view"), response.context?.get("policies"))
     }
 
-    /** A policy that published nothing leaves a context with only the PDP's own properties. */
+    /** A policy that published nothing leaves no context at all: the PDP omits the key. */
     @Test
-    fun `should leave the context bare when the policy published nothing`() {
-        val body = """{"context":{"id":"ok","reason_user":{"en":"ok"}},"decision":true}"""
+    fun `should leave the context absent when the policy published nothing`() {
+        val body = """{"decision":true}"""
 
         val context = objectMapper.readValue(body, AuthzenEvaluationResponse::class.java).context
 
-        assertEquals(setOf("id", "reason_user"), context?.keys)
+        assertNull(context)
     }
 
     // ---- typed response context -----------------------------------------------------------------
@@ -268,7 +267,7 @@ class AuthzenPdpClientTest {
         client().evaluateAll(listOf(evaluation("1"), evaluation("2")))
 
         val body = takeRequestAfterDiscovery().body.readUtf8()
-        assertTrue(body.contains("\"evaluation_semantics\":\"execute_all\""), body)
+        assertTrue(body.contains("\"evaluations_semantic\":\"execute_all\""), body)
     }
 
     /**

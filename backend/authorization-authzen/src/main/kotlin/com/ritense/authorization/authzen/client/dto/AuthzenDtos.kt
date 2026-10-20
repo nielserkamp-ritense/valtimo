@@ -65,9 +65,9 @@ data class AuthzenEvaluationRequest(
 /**
  * A decision, and the response context beside it.
  *
- * [context] is deliberately an untyped map, with no accessor per property: besides `id` and
- * `reason_user`, the PDP publishes **every property the matched policy defines** as a property of
- * this object, under the name the policy chose. Which properties exist is the policy author's
+ * [context] is deliberately an untyped map, with no accessor per property: the PDP publishes
+ * exactly the context the matched policy returns, every property under the name the policy chose,
+ * and omits it when the policy returns none. Which properties exist is the policy author's
  * business, not this client's — a caller that expects one reads `context["<name>"]` and copes with
  * its absence.
  */
@@ -114,8 +114,8 @@ data class AuthzenEvaluationsOptions(
      * `permit_on_first_permit`) return a *shorter* array than requested, which would silently
      * misalign decisions with the entities they belong to.
      */
-    @get:JsonProperty("evaluation_semantics")
-    val evaluationSemantics: String = "execute_all",
+    @get:JsonProperty("evaluations_semantic")
+    val evaluationsSemantic: String = "execute_all",
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)

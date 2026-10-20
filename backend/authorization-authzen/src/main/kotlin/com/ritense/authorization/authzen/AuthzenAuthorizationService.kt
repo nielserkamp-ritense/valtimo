@@ -218,7 +218,7 @@ class AuthzenAuthorizationService(
 
     /**
      * `filter` defaults to empty and unknown properties are ignored because the response context is
-     * never only ours: the PDP publishes `id` and `reason_user` beside it, and a policy that
+     * never only ours: a policy may publish other properties beside it, and a policy that
      * publishes no `filter` at all omits the key entirely rather than sending `[]`.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
